@@ -76,9 +76,9 @@ def _pop_grammar():
     ref_phase_name = symbol_name = Word(alphanums + '_:()', min=1)
     # species name, e.g., CO2, AL, FE3+
     species_name = Word(alphanums + '+-*', min=1) + Optional(Suppress('%'))
-    const = symbol_name + Suppress('=') + float_number
-    label = Word('@'+nums)
     equalities = Word('=') ^ Word('<') ^ Word('>')
+    const = symbol_name + equalities + float_number
+    label = Word('@'+nums)
     phase = OneOrMore(ref_phase_name + Optional(Suppress(','))) + equalities + (float_number ^ label ^ symbol_name)
     error = Suppress(':') + float_number + Optional(Word('%'))
     cmd_equilibrium = POPCommand('CREATE_NEW_EQUILIBRIUM') + (Word('@@,') ^ Word('@@') ^ int_number) + Optional(Suppress(',')) + int_number
@@ -88,7 +88,7 @@ def _pop_grammar():
     cmd_table_head = POPCommand('TABLE_HEAD') + int_number
     cmd_table_values = POPCommand('TABLE_VALUES') + OneOrMore(float_number) + POPCommand('TABLE_END')
     cmd_set_ref_state = POPCommand('SET_REFERENCE_STATE') + symbol_name + symbol_name + Optional(OneOrMore(Suppress(','))) # TODO: should these default values be handled?
-    cmd_set_condition = POPCommand('SET_CONDITION') + ZeroOrMore(const + Optional(Suppress(','))) + ZeroOrMore(phase + Optional(Suppress(',')))
+    cmd_set_condition = POPCommand('SET_CONDITION') + OneOrMore((const ^ phase) + Optional(Suppress(',')))
     cmd_label = POPCommand('LABEL_DATA') + OneOrMore(Word(alphanums))
     cmd_experiment_phase = (POPCommand('EXPERIMENT') +  phase + error)
     cmd_experiment_const = POPCommand('EXPERIMENT') + const + error
@@ -171,7 +171,7 @@ def main(str):
     commands = parsable(str)
     data = [] # a list of dictionaries. New dictionaries are added when a new equilibrium is added.
     for command in commands:
-
+        print(command)
         tokens = None
         try:
             tokens = _pop_grammar().parseString(command)
@@ -183,6 +183,7 @@ def main(str):
         except NotImplementedError:
             #print("The command {} is not implemented.".format(tokens[0]))
             pass
+        print(tokens)
 
 try:
     from mgni_test import mgni_full_str
@@ -202,3 +203,8 @@ if __name__ == "__main__":
 # 2. Get the useful stuff from the parsed data
 # 3. Reformat to JSON
 
+# TODO: Missed parses
+# 3*X(MG)=1 not parsed and later 3*X(MG)=2
+# Phases in properties should be grouped. E.g. X(LIQ,NI)=@2 should be grouped => ['X', ['LIQ','NI'], '=', '@2']
+# parsing 0 as a float when there is no decimal
+# ENTER_SYMBOL FUNCTION XYZ, function is parsed.

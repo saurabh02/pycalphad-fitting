@@ -73,26 +73,27 @@ def _pop_grammar():
         .setParseAction(lambda t: [float(t[0])])
     # symbol name, e.g., phase name or equilibrium name
     symbol_name = Word(alphanums+'_:', min=1)
-    ref_phase_name = symbol_name = Word(alphanums + '_:()', min=1)
+    ref_phase_name = Word(alphanums + '_:()', min=1)
     # species name, e.g., CO2, AL, FE3+
     species_name = Word(alphanums + '+-*', min=1) + Optional(Suppress('%'))
     equalities = Word('=') ^ Word('<') ^ Word('>')
-    const = symbol_name + equalities + float_number
     label = Word('@'+nums)
-    phase = OneOrMore(ref_phase_name + Optional(Suppress(','))) + equalities + (float_number ^ label ^ symbol_name)
-    error = Suppress(':') + float_number + Optional(Word('%'))
+    const = symbol_name + equalities + (float_number | int_number | label | symbol_name)
+    phases = Group(OneOrMore(symbol_name + Optional(Suppress(','))))
+    property = symbol_name + Suppress('(') + phases + Suppress(')') + equalities + (float_number ^ label ^ symbol_name)  #symbol_name + Literal('(') + Word(alphanums+'()') + Literal(')') + equalities + Word(alphanums)
+    error = Suppress(':') + float_number + Optional('%')
     cmd_equilibrium = POPCommand('CREATE_NEW_EQUILIBRIUM') + (Word('@@,') ^ Word('@@') ^ int_number) + Optional(Suppress(',')) + int_number
     # TODO: implement changing status of other things
-    cmd_change_status = POPCommand('CHANGE_STATUS') + POPCommand('PHASE') + OneOrMore(symbol_name + Optional(Suppress(','))) + Suppress('=') + ((POPCommand('FIX') + float_number) ^ (POPCommand('DORMANT')))
+    cmd_change_status = POPCommand('CHANGE_STATUS') + POPCommand('PHASE') + phases + Suppress('=') + ((POPCommand('FIX') + float_number) ^ (POPCommand('DORMANT')))
     cmd_en_symbol = POPCommand('ENTER_SYMBOL') + ((POPCommand('CONSTANTS') +  OneOrMore(const)) ^ POPCommand('VARIABLE') ^ POPCommand('FUNCTION') ^ POPCommand('TABLE')) # TODO: handle variable, function, and table
     cmd_table_head = POPCommand('TABLE_HEAD') + int_number
     cmd_table_values = POPCommand('TABLE_VALUES') + OneOrMore(float_number) + POPCommand('TABLE_END')
     cmd_set_ref_state = POPCommand('SET_REFERENCE_STATE') + symbol_name + symbol_name + Optional(OneOrMore(Suppress(','))) # TODO: should these default values be handled?
-    cmd_set_condition = POPCommand('SET_CONDITION') + OneOrMore((const ^ phase) + Optional(Suppress(',')))
+    cmd_set_condition = POPCommand('SET_CONDITION') + OneOrMore(( property | const) + Optional(Suppress(',')))
     cmd_label = POPCommand('LABEL_DATA') + OneOrMore(Word(alphanums))
-    cmd_experiment_phase = (POPCommand('EXPERIMENT') +  phase + error)
+    cmd_experiment_phase = (POPCommand('EXPERIMENT') + (property | const) + error)
     cmd_experiment_const = POPCommand('EXPERIMENT') + const + error
-    cmd_start_value = POPCommand('SET_START_VALUE') + phase
+    cmd_start_value = POPCommand('SET_START_VALUE') + property
     cmd_save = POPCommand('SAVE_WORKSPACE')
     return cmd_equilibrium | cmd_change_status |cmd_en_symbol | cmd_table_head | cmd_table_values | \
            cmd_set_ref_state | cmd_set_condition | cmd_label | cmd_experiment_const | \
@@ -205,6 +206,6 @@ if __name__ == "__main__":
 
 # TODO: Missed parses
 # 3*X(MG)=1 not parsed and later 3*X(MG)=2
-# Phases in properties should be grouped. E.g. X(LIQ,NI)=@2 should be grouped => ['X', ['LIQ','NI'], '=', '@2']
 # parsing 0 as a float when there is no decimal
 # ENTER_SYMBOL FUNCTION XYZ, function is parsed.
+# does not support complicated conditions e.g. S-C P=P0, X(LIQ,MG)-X(MGNI2,MG)=0

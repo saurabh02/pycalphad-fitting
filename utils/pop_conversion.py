@@ -209,7 +209,4 @@ if __name__ == "__main__":
 # 3. Reformat to JSON
 
 # TODO: Missed parses
-# 3*X(MG)=1 not parsed and later 3*X(MG)=2
-# parsing 0 as a float when there is no decimal
-# ENTER_SYMBOL FUNCTION XYZ, function is parsed.
-# does not support complicated conditions e.g. S-C P=P0, X(LIQ,MG)-X(MGNI2,MG)=0
+# TODO: Name with .setResultName to facilitate better data construction

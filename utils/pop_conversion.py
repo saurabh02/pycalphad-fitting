@@ -77,10 +77,14 @@ def _pop_grammar():
     # species name, e.g., CO2, AL, FE3+
     species_name = Word(alphanums + '+-*', min=1) + Optional(Suppress('%'))
     equalities = Word('=') ^ Word('<') ^ Word('>')
+    pm = oneOf('+ -')
     label = Word('@'+nums)
-    const = symbol_name + equalities + (float_number | int_number | label | symbol_name)
+    value = (float_number | int_number | label | symbol_name)
+    const = Group(symbol_name + equalities + value)
     phases = Group(OneOrMore(symbol_name + Optional(Suppress(','))))
-    property = symbol_name + Suppress('(') + phases + Suppress(')') + equalities + (float_number ^ label ^ symbol_name)  #symbol_name + Literal('(') + Word(alphanums+'()') + Literal(')') + equalities + Word(alphanums)
+    prop_prefix = symbol_name + Suppress('(') + phases + Suppress(')')
+    property = Group(prop_prefix + equalities + value)
+    arith_cond = Group(OneOrMore(Optional(Word(nums) + '*')+ prop_prefix + Optional(pm)) + equalities + value) # an arithmetic matcher for complex conditions
     error = Suppress(':') + float_number + Optional('%')
     cmd_equilibrium = POPCommand('CREATE_NEW_EQUILIBRIUM') + (Word('@@,') ^ Word('@@') ^ int_number) + Optional(Suppress(',')) + int_number
     # TODO: implement changing status of other things
@@ -89,7 +93,7 @@ def _pop_grammar():
     cmd_table_head = POPCommand('TABLE_HEAD') + int_number
     cmd_table_values = POPCommand('TABLE_VALUES') + OneOrMore(float_number) + POPCommand('TABLE_END')
     cmd_set_ref_state = POPCommand('SET_REFERENCE_STATE') + symbol_name + symbol_name + Optional(OneOrMore(Suppress(','))) # TODO: should these default values be handled?
-    cmd_set_condition = POPCommand('SET_CONDITION') + OneOrMore(( property | const) + Optional(Suppress(',')))
+    cmd_set_condition = POPCommand('SET_CONDITION') + OneOrMore(( arith_cond | property | const ) + Optional(Suppress(',')))
     cmd_label = POPCommand('LABEL_DATA') + OneOrMore(Word(alphanums))
     cmd_experiment_phase = (POPCommand('EXPERIMENT') + (property | const) + error)
     cmd_experiment_const = POPCommand('EXPERIMENT') + const + error

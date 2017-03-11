@@ -83,25 +83,29 @@ def _pop_grammar():
     phases = Group(OneOrMore(symbol_name + Optional(sCOMMA))) | '*'
     prop_prefix = symbol_name + Suppress('(') + phases + Suppress(')')
     property = Group(prop_prefix + equalities + value)
+    expr = Group(OneOrMore(prop_prefix | float_number | oneOf('. + - / * ( )') | symbol_name))
     arith_cond = Group(OneOrMore(Optional(Word(nums) + '*')+ prop_prefix + Optional(pm)) + equalities + value) # an arithmetic matcher for complex conditions
-    error = Suppress(':') + float_number + Optional('%')
+    error = Group(Suppress(':') + float_number + Optional('%'))
     cmd_equilibrium = POPCommand('CREATE_NEW_EQUILIBRIUM') + (Word('@@,') ^ int_number) + Optional(sCOMMA) + int_number
     # TODO: implement changing status of other things
     phase_statuses = ((POPCommand('FIXED') ^ POPCommand('ENTERED')) + float_number) | POPCommand('DORMANT') | POPCommand('SUSPENDED')
     cmd_change_status = POPCommand('CHANGE_STATUS') + POPCommand('PHASE') + phases + Suppress('=') + phase_statuses
-    cmd_en_symbol = POPCommand('ENTER_SYMBOL') + ((POPCommand('CONSTANTS') +  OneOrMore(const)) | POPCommand('VARIABLE') | POPCommand('FUNCTION') | POPCommand('TABLE')) # TODO: handle variable, function, and table
+    enter_const = POPCommand('CONSTANTS') +  OneOrMore(const)
+    enter_func_var = (POPCommand('FUNCTION') | POPCommand('VARIABLE')) + symbol_name + '=' + expr
+    enter_table = POPCommand('TABLE') # TODO: implement
+    cmd_en_symbol = POPCommand('ENTER_SYMBOL') + (enter_const | enter_func_var | enter_table)
     cmd_table_head = POPCommand('TABLE_HEAD') + int_number
     cmd_table_values = POPCommand('TABLE_VALUES') + OneOrMore(float_number) + POPCommand('TABLE_END')
     cmd_set_ref_state = POPCommand('SET_REFERENCE_STATE') + symbol_name + symbol_name + Optional(OneOrMore(sCOMMA)) # TODO: should these default values be handled?
-    cmd_set_condition = POPCommand('SET_CONDITION') + OneOrMore(( arith_cond | property | const ) + Optional(sCOMMA))
+    cmd_set_condition = POPCommand('SET_CONDITION') + OneOrMore(( arith_cond | property | const ) + Optional(error) + Optional(sCOMMA))
     cmd_label = POPCommand('LABEL_DATA') + OneOrMore(Word(alphanums))
-    cmd_experiment_phase = (POPCommand('EXPERIMENT') + (property | const) + error)
+    cmd_experiment_phase = POPCommand('EXPERIMENT') + OneOrMore(Group((property | const) + error) + Optional(sCOMMA))
     cmd_experiment_const = POPCommand('EXPERIMENT') + const + error
     cmd_start_value = POPCommand('SET_START_VALUE') + property
     cmd_save = POPCommand('SAVE_WORKSPACE')
-    return cmd_equilibrium | cmd_change_status |cmd_en_symbol | cmd_table_head | cmd_table_values | \
-           cmd_set_ref_state | cmd_set_condition | cmd_label | cmd_experiment_const | \
-           cmd_experiment_phase | cmd_start_value | cmd_save
+    return (cmd_equilibrium | cmd_change_status |cmd_en_symbol | cmd_table_head | cmd_table_values |
+           cmd_set_ref_state | cmd_set_condition | cmd_label | cmd_experiment_const |
+           cmd_experiment_phase | cmd_start_value | cmd_save) + Optional(Suppress(';')) #+ stringEnd
 
 def _unimplemented(*args, **kwargs):
     """
@@ -165,6 +169,7 @@ def parsable(instring):
             capture_values = False
             table_values_line = ' '.join([table_values_line, line])
             new_splitlines.append(table_values_line)
+            table_values_line = ''
         elif capture_values:
             table_values_line = ' '.join([table_values_line, line])
         else:
@@ -211,5 +216,4 @@ if __name__ == "__main__":
 # 2. Get the useful stuff from the parsed data
 # 3. Reformat to JSON
 
-# TODO: Missed parses
 # TODO: Name with .setResultName to facilitate better data construction

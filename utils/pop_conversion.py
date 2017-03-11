@@ -69,7 +69,7 @@ def _pop_grammar():
     """
     int_number = Word(nums).setParseAction(lambda t: [int(t[0])])
     # matching float w/ regex is ugly but is recommended by pyparsing
-    float_number = Regex(r'[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?') \
+    float_number = (Regex(r'[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?') | '0')  \
         .setParseAction(lambda t: [float(t[0])])
     # symbol name, e.g., phase name or equilibrium name
     symbol_name = Word(alphanums+'_:', min=1)

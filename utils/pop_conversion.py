@@ -81,14 +81,14 @@ def _pop_grammar():
     label = Word('@'+nums)
     value = (float_number | int_number | label | symbol_name)
     const = Group(symbol_name + equalities + value)
-    phases = Group(OneOrMore(symbol_name + Optional(Suppress(','))))
+    phases = Group(OneOrMore(symbol_name + Optional(Suppress(',')))) | '*'
     prop_prefix = symbol_name + Suppress('(') + phases + Suppress(')')
     property = Group(prop_prefix + equalities + value)
     arith_cond = Group(OneOrMore(Optional(Word(nums) + '*')+ prop_prefix + Optional(pm)) + equalities + value) # an arithmetic matcher for complex conditions
     error = Suppress(':') + float_number + Optional('%')
     cmd_equilibrium = POPCommand('CREATE_NEW_EQUILIBRIUM') + (Word('@@,') ^ Word('@@') ^ int_number) + Optional(Suppress(',')) + int_number
     # TODO: implement changing status of other things
-    cmd_change_status = POPCommand('CHANGE_STATUS') + POPCommand('PHASE') + phases + Suppress('=') + ((POPCommand('FIX') + float_number) ^ (POPCommand('DORMANT')))
+    cmd_change_status = POPCommand('CHANGE_STATUS') + POPCommand('PHASE') + phases + Suppress('=') + (((POPCommand('FIX') ^ POPCommand('ENTERED')) + float_number) | POPCommand('DORMANT') | POPCommand('SUSPENDED'))
     cmd_en_symbol = POPCommand('ENTER_SYMBOL') + ((POPCommand('CONSTANTS') +  OneOrMore(const)) ^ POPCommand('VARIABLE') ^ POPCommand('FUNCTION') ^ POPCommand('TABLE')) # TODO: handle variable, function, and table
     cmd_table_head = POPCommand('TABLE_HEAD') + int_number
     cmd_table_values = POPCommand('TABLE_VALUES') + OneOrMore(float_number) + POPCommand('TABLE_END')
@@ -151,7 +151,7 @@ def parsable(instring):
     lines = lines.strip()  # strips trailing and leading whitespace
     splitlines = lines.split('\n')  # split by newlines
     splitlines = [' '.join(k.split()) for k in splitlines if k != '']  # separates everything by just one whitespace character
-    splitlines = [l for l in splitlines if not l.startswith("@@")]
+    splitlines = [l for l in splitlines if not (l.startswith("@@") or l.startswith("$"))]
     # Concatenate table values to table end on to one line
     #  very hacky, cannot handle cases where things are in an unexpected order or abbreviated.
     new_splitlines = []
@@ -191,8 +191,9 @@ def main(str):
         print(tokens)
 
 try:
-    from mgni_test import mgni_full_str
+    from mgni_test import *
     str = mgni_full_str
+    str = ca_bi
 except ImportError:
     print('Failed to import mgni_test. Falling back to last argument to script')
     import sys

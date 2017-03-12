@@ -10,7 +10,7 @@ print("""WARNING! This module is VERY experimental. You will most likely get fai
 You should check all of your data instead of assuming it is correct.
 Please report any errors so that this module can be improved.""")
 
-class ExperimentSet(Dict):
+class ExperimentSet(dict):
     """
     Experiment set, which is a stored as a dictionary.
 
@@ -26,6 +26,13 @@ class ExperimentSet(Dict):
     @property
     def columns(self):
         return self._columns
+
+    def update(self, E=None, **F):
+        """
+        Overrides dict update to return self (for lambda functions)
+        """
+        super(ExperimentSet, self).update(E, **F)
+        return self
 
 
 class POPCommand(CaselessKeyword):
@@ -95,7 +102,7 @@ def _pop_grammar():
     enter_table = POPCommand('TABLE') # TODO: implement
     cmd_en_symbol = POPCommand('ENTER_SYMBOL') + (enter_const | enter_func_var | enter_table)
     cmd_table_head = POPCommand('TABLE_HEAD') + int_number
-    cmd_table_values = POPCommand('TABLE_VALUES') + OneOrMore(float_number) + POPCommand('TABLE_END')
+    cmd_table_values = POPCommand('TABLE_VALUES') + sCOMMA + Group(delimitedList(Group(OneOrMore(float_number)))) + Suppress(POPCommand('TABLE_END'))
     cmd_set_ref_state = POPCommand('SET_REFERENCE_STATE') + symbol_name + symbol_name + Optional(OneOrMore(sCOMMA)) # TODO: should these default values be handled?
     cmd_set_condition = POPCommand('SET_CONDITION') + OneOrMore(( arith_cond | property | const ) + Optional(error) + Optional(sCOMMA))
     cmd_label = POPCommand('LABEL_DATA') + OneOrMore(Word(alphanums))
@@ -107,43 +114,71 @@ def _pop_grammar():
            cmd_set_ref_state | cmd_set_condition | cmd_label | cmd_experiment_const |
            cmd_experiment_phase | cmd_start_value | cmd_save) + Optional(Suppress(';')) #+ stringEnd
 
+def unpack_parse_results(parse_results):
+    """
+    Recursively unpacks parse results and return the unpacked result.
+
+    Args:
+        parse_results (ParseResults): a tuple of a list of values and dict of names. The list may contain nested ParseResults
+    """
+    results_list = []
+    for result in parse_results:
+        if isinstance(result, ParseResults):
+            results_list.append(unpack_parse_results(result))
+        else:
+            results_list.append(result)
+    return results_list
+
 def _unimplemented(*args, **kwargs):
     """
-    Raise error if not implemented. Used when a command could/should be used.
+    Wrapper to raise NotImplementedError
 
-    In principle, when this is no longer used, all of the possible commands will be either implemented
-    or they will simply `pass` (the command has no effect on the data, e.g. SAVE_WORKSPACE).
+    This should be used when a command that affects the data is unimplmented. If the command does not
+    affect the data, then `_pass` should be used.
     """
     raise NotImplementedError
 
 def _pass(*args, **kwargs):
-    pass
+    """
+    Pass is intended for POP commands that do not impact the data
+
+    Commands that do impact the data should use `_unimplemented`
+    """
+    return args[0] # return the experiment unchanged
+
+def _new_equilibrium(_, _1, code):
+    # initialization codes
+    # 0: suspend all phases and components
+    # 1: enter all components only
+    # 2: enter all
+    if code == 1:
+        return ExperimentSet()
+    else:
+        raise NotImplementedError
 
 _POP_PROCESSOR = {
-    'TABLE_HEAD': _unimplemented,
-    'TABLE_END': _unimplemented,
-    'TABLE_VALUES': _unimplemented,
-    'ADVANCED_OPTIONS': _unimplemented,  # 125
+    'TABLE_HEAD': _pass,
+    'TABLE_VALUES': lambda exp, table_values: exp.update({"table_values": unpack_parse_results(table_values)}),
+    'ADVANCED_OPTIONS': _pass,  # 125
     'CHANGE_STATUS': _unimplemented,  # implementing # 135
-    'COMMENT': _unimplemented,  # implementing? # 40
-    'CREATE_NEW_EQUILIBRIUM': _unimplemented,  # implementing # 143
+    'COMMENT': _pass,  # implementing? # 40
+    'CREATE_NEW_EQUILIBRIUM': _new_equilibrium,  # implementing # 143
     'DEFINE_COMPONENTS': _unimplemented,  # 143
     'ENTER_SYMBOL': _unimplemented,  # implementing #195
-    'EVALUATE_FUNCTIONS': _unimplemented,  # 155
+    'EVALUATE_FUNCTIONS': _pass,  # 155
     'EXPERIMENT': _unimplemented,  # implementing # 24
-    'EXPORT': _unimplemented,  # 26
-    'FLUSH_BUFFER': _unimplemented,  # 41
-    'IMPORT': _unimplemented,  # 27
-    'LABEL_DATA': _unimplemented,  # implementing # 28
+    'EXPORT': _pass,  # 26
+    'FLUSH_BUFFER': _pass,  # 41
+    'IMPORT': _pass,  # 27
+    'LABEL_DATA': lambda exp, label: exp.update({"label": label}),  # implementing # 28
     'SAVE_WORKSPACE': _pass,  # 232
-    'SET_ALL_START_VALUES': _unimplemented,  # 162
-    'SET_ALTERNATE_CONDITION': _unimplemented,  # 30
+    'SET_ALL_START_VALUES': _pass,  # 162
+    'SET_ALTERNATE_CONDITION': _pass,  # 30
     'SET_CONDITION': _unimplemented,  # implementing # 165
-    'SET_NUMERICAL_LIMITS': _unimplemented,  # 237
+    'SET_NUMERICAL_LIMITS': _pass,  # 237
     'SET_REFERENCE_STATE': _unimplemented,  # implementing # 169
     'SET_START_VALUE': _unimplemented,  # 171
-    'SET_WEIGHT': _unimplemented,  # 33
-    'LABEL': _unimplemented,
+    'SET_WEIGHT': _pass,  # 33
 }
 
 def parsable(instring):
@@ -164,56 +199,63 @@ def parsable(instring):
     for line in splitlines:
         if line.startswith('TABLE_VALUE'):
             capture_values = True
-            table_values_line = ' '.join([table_values_line, line])
+            table_values_line = ''.join([table_values_line, line])
         elif line.startswith('TABLE_END'):
             capture_values = False
             table_values_line = ' '.join([table_values_line, line])
             new_splitlines.append(table_values_line)
             table_values_line = ''
         elif capture_values:
-            table_values_line = ' '.join([table_values_line, line])
+            table_values_line = ', '.join([table_values_line, line])
         else:
             new_splitlines.append(line)
     splitlines = new_splitlines
     return splitlines
 
-def main(str):
-    commands = parsable(str)
+def main(instring):
+    # create an empty
+    current_experiment_set = None
     data = [] # a list of dictionaries. New dictionaries are added when a new equilibrium is added.
+    commands = parsable(instring)
     for command in commands:
-        print(command)
         tokens = None
         try:
             tokens = _pop_grammar().parseString(command)
-            _POP_PROCESSOR[tokens[0]]()
+            new_experiment_set = _POP_PROCESSOR[tokens[0]](current_experiment_set, *tokens[1:])
+            # if the new object is different than the old, then we want to make that current and add
+            # it to the list of experiments
+            if new_experiment_set is not current_experiment_set:
+                current_experiment_set = new_experiment_set
+                data.append(current_experiment_set)
         except ParseException:
             print("Failed while parsing: " + command)
             print("Tokens: " + str(tokens))
             raise
-        except NotImplementedError:
+        except NotImplementedError as e:
             #print("The command {} is not implemented.".format(tokens[0]))
             pass
+            #raise NotImplementedError("Command {} is not implemented for tokens {}".format(str(tokens[0]), str(tokens[1:])))
         print(tokens)
+        print(command)
+    print(data)
 
 try:
     from mgni_test import *
     strs = [mgni_full_str, ca_bi]
-    str = ""
+    instring = ""
     for s in strs:
-        str = "\n".join([str, s])
+        instring = "\n".join([instring, s])
 except ImportError:
     print('Failed to import mgni_test. Falling back to last argument to script')
     import sys
     f_arg = sys.argv[-1]
     with open(f_arg, 'r') as f:
-        str = f.read()
+        instring = f.read()
 
 if __name__ == "__main__":
-    main(str)
+    main(instring)
 
 # IMPLEMENTATION STEPS
 # 1. Handle the syntax. Be able to parse everything. Start with Mg-Ni
 # 2. Get the useful stuff from the parsed data
 # 3. Reformat to JSON
-
-# TODO: Name with .setResultName to facilitate better data construction

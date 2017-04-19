@@ -88,6 +88,7 @@ def _pop_grammar():
     arith_cond = Group(OneOrMore(Optional(Word(nums) + '*') + prop_prefix + Optional(
         pm)) + equalities + value)  # an arithmetic matcher for complex conditions
     error = Group(Suppress(':') + float_number + Optional('%'))
+    sERROR = Suppress(error)
     cmd_equilibrium = POPCommand('CREATE_NEW_EQUILIBRIUM') + (Word('@@,') ^ int_number) + Optional(
         sCOMMA) + int_number
     # TODO: implement changing status of other things
@@ -105,16 +106,15 @@ def _pop_grammar():
     cmd_set_ref_state = POPCommand('SET_REFERENCE_STATE') + symbol_name + symbol_name + Optional(
         OneOrMore(sCOMMA))  # TODO: should these default values be handled?
     cmd_set_condition = POPCommand('SET_CONDITION') + OneOrMore(
-        (arith_cond | property | const) + Optional(error) + Optional(sCOMMA))
+        (arith_cond | property | const) + Optional(sERROR) + Optional(sCOMMA))
     cmd_label = POPCommand('LABEL_DATA') + OneOrMore(Word(alphanums))
     cmd_experiment_phase = POPCommand('EXPERIMENT') + OneOrMore(
-        Group((property | const) + error) + Optional(sCOMMA))
-    cmd_experiment_const = POPCommand('EXPERIMENT') + const + error
+        Group((property | const) + sERROR) + Optional(sCOMMA))
     cmd_start_value = POPCommand('SET_START_VALUE') + property
     cmd_save = POPCommand('SAVE_WORKSPACE')
     return (
                cmd_equilibrium | cmd_change_status | cmd_en_symbol | cmd_table_head | cmd_table_values |
-               cmd_set_ref_state | cmd_set_condition | cmd_label | cmd_experiment_const |
+               cmd_set_ref_state | cmd_set_condition | cmd_label |
                cmd_experiment_phase | cmd_start_value | cmd_save) + Optional(
         Suppress(';')) + stringEnd
 
@@ -212,11 +212,15 @@ def construct_symbol(symbol_list):
     """
     symbol_string = ''
     for s in symbol_list:
-        if s == '.': s = '*d'  # handle derivatives. TODO: improve derivative handling
+        if s == '.':
+            s = '*d'  # handle derivatives. TODO: improve derivative handling
+        elif '@' in str(s):
+            print(type(s))
+            s = str(s).replace('@', 'col')  # replace column reference, '@' with 'col'
+            print(str(s))
         if isinstance(s, ParseResults):
             s = unpack_parse_results(s)
             new_s = '_'
-            print('callout')
             for sub_s in s:
                 new_s = ''.join([new_s, sub_s])
             s = new_s
@@ -253,6 +257,24 @@ def _process_symbols(exp, symbol_type, symbols):
 
     return exp
 
+def _process_experiment(exp, experiments):
+    exp_experiments = exp.get('experiments', [])
+    for experiment in experiments:
+        d = {}
+        d["property"] = experiment[0]
+        print(experiment)
+        # directly create a symbolic equation with all of the
+        if isinstance(experiment[1], ParseResults):
+            # assume the format prop(phase) (=/>/<) symbol is followed
+            d["phases"] = experiment[1]
+            d["equality"] = experiment[2]
+            d["symbol_repr"] = construct_symbol(experiment[3:])
+        else:
+            # assume prop (=/>/<) symbol
+            d["equality"] = experiment[1]
+            d["symbol_repr"] = construct_symbol(experiment[2:])
+    exp["experiments"] = exp_experiments
+    return exp
 
 _POP_PROCESSOR = {
     'TABLE_HEAD': _pass,
@@ -265,7 +287,7 @@ _POP_PROCESSOR = {
     'DEFINE_COMPONENTS': _unimplemented,  # 143
     'ENTER_SYMBOL': _process_symbols,  # implementing #195
     'EVALUATE_FUNCTIONS': _pass,  # 155
-    'EXPERIMENT': _unimplemented,  # implementing # 24
+    'EXPERIMENT': _process_experiment,  # implementing # 24
     'EXPORT': _pass,  # 26
     'FLUSH_BUFFER': _pass,  # 41
     'IMPORT': _pass,  # 27
@@ -368,3 +390,7 @@ if __name__ == "__main__":
 # 3. Reformat to JSON
 
 # TODO: handle the global_symbols better. Should I make a global variable and just substitue them?
+
+#CHANGELIST
+#- Remove redundant experiment constant command
+#- Suppress experimental and conditional error
